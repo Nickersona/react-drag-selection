@@ -9,6 +9,7 @@ Pipeline = React.memo(Pipeline);
 
 const Card = ({ children }) => {
   const { isSelected, selectableRef } = useSelectableByDrag();
+
   let className = "card";
   className += isSelected ? " card--selected" : "";
   return (
@@ -18,9 +19,31 @@ const Card = ({ children }) => {
   );
 };
 
+function KeyLegend({ isActive, children }) {
+  let className = "key-legend";
+  className += isActive ? " key-legend--active" : "";
+  return <span className={className}>{children}</span>;
+}
+function ControlsLegend() {
+  return (
+    <div className="control-legend">
+      <ul>
+        <li>
+          <KeyLegend>Command</KeyLegend> Enter Drag Select Mode
+        </li>
+        <li>
+          <KeyLegend>Command</KeyLegend> + <KeyLegend>Shift</KeyLegend> Enter
+          Drag Select Mode
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 function App() {
   return (
     <DragSelectionContextProvider>
+      <ControlsLegend />
       <div className="board">
         <Pipeline>
           <Card>

@@ -58,8 +58,6 @@ function reducer(state, action) {
   }
 }
 
-// Needed to maintain a stable reference to the move event handler to remove while not dragging
-let funcRef = null;
 function isIntersecting(start, end, boundingRect) {
   const rightX = boundingRect.left + boundingRect.width;
   const leftX = boundingRect.left;
@@ -74,11 +72,25 @@ function isIntersecting(start, end, boundingRect) {
   );
 }
 
+const SELECTION_MODES = {
+  ADD: "ADD",
+  REMOVE: "REMOVE",
+};
+
+function getSelectionMode({ ctrlKey, shiftKey }) {
+  if (ctrlKey) return SELECTION_MODES.REMOVE;
+  if (shiftKey) return SELECTION_MODES.ADD;
+  return "default";
+}
+
+// Needed to maintain a stable reference to the move event handler to remove while not dragging
+let funcRef = null;
+
 const DragHighlight = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isDragging } = state;
 
-  const { checkForIntersections } = useContext(DragSelectionContext);
+  const { selectOnIntersection } = useContext(DragSelectionContext);
 
   useEffect(() => {
     if (isDragging) {
@@ -92,7 +104,9 @@ const DragHighlight = () => {
           payload,
         });
 
-        checkForIntersections(state.dragStartPosition, payload);
+        selectOnIntersection(state.dragStartPosition, payload, {
+          selectionMode: getSelectionMode(event),
+        });
       }
 
       window.addEventListener("mousemove", onMoveHandler);
@@ -106,13 +120,16 @@ const DragHighlight = () => {
   // TODO Figure out why the dispatch in this handler, cancels click events deeper down the component tree
   React.useEffect(function() {
     window.addEventListener("mousedown", (event) => {
-      dispatch({
-        type: "dragstart",
-        payload: { x: event.pageX, y: event.pageY },
-      });
+      console.log(event);
+      if (event.metaKey) {
+        dispatch({
+          type: "dragstart",
+          payload: { x: event.pageX, y: event.pageY },
+        });
+      }
     });
 
-    window.addEventListener("mouseup", () => {
+    window.addEventListener("mouseup", (event) => {
       dispatch({ type: "dragend" });
     });
   }, []);
@@ -134,6 +151,37 @@ const DragHighlight = () => {
   ) : null;
 };
 
+function addSelection(element, startCorner, endCorner) {
+  if (element.isSelected) return;
+
+  const hasIntersection = isIntersecting(startCorner, endCorner, element.rect);
+  element.isSelected = hasIntersection;
+  if (hasIntersection) element.selectionHandler();
+}
+
+function removeSelection(element, startCorner, endCorner) {
+  if (!element.isSelected) return;
+  const hasIntersection = isIntersecting(startCorner, endCorner, element.rect);
+
+  element.isSelected = !hasIntersection;
+  if (!hasIntersection) {
+    element.selectionHandler();
+  } else {
+    element.deselectionHandler();
+  }
+}
+
+function defaultSelection(element, startCorner, endCorner) {
+  const hasIntersection = isIntersecting(startCorner, endCorner, element.rect);
+
+  element.isSelected = hasIntersection;
+  if (hasIntersection) {
+    element.selectionHandler();
+  } else {
+    element.deselectionHandler();
+  }
+}
+
 const selectionRectangleDimensions = {
   registeredEls: new Map(),
   registerSelectableElement: (element, onSelect, onDeselect) => {
@@ -142,24 +190,24 @@ const selectionRectangleDimensions = {
       rect: element.getBoundingClientRect(),
       selectionHandler: onSelect,
       deselectionHandler: onDeselect,
+      isSelected: false,
     });
 
     return () => {
       selectionRectangleDimensions.registeredEls.delete(element);
     };
   },
-  checkForIntersections: (startCorner, endCorner) => {
+  selectOnIntersection: (startCorner, endCorner, options = {}) => {
     for (let element of selectionRectangleDimensions.registeredEls.values()) {
-      const hasIntersection = isIntersecting(
-        startCorner,
-        endCorner,
-        element.rect
-      );
-
-      if (hasIntersection) {
-        element.selectionHandler();
-      } else {
-        element.deselectionHandler();
+      switch (options.selectionMode) {
+        case SELECTION_MODES.ADD:
+          addSelection(element, startCorner, endCorner);
+          break;
+        case SELECTION_MODES.REMOVE:
+          removeSelection(element, startCorner, endCorner);
+          break;
+        default:
+          defaultSelection(element, startCorner, endCorner);
       }
     }
   },
@@ -169,7 +217,6 @@ const DragSelectionContext = React.createContext(selectionRectangleDimensions);
 export function useSelectableByDrag() {
   const { registerSelectableElement } = useContext(DragSelectionContext);
   const [isSelected, setIsSelected] = useState(false);
-
   const selectableRef = useRef(null);
 
   useEffect(() => {
